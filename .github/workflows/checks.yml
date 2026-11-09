@@ -1,0 +1,62 @@
+name: Backend checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      COMPOSE_PROJECT_NAME: cafepay-ci
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python for recovery helpers
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+
+      - name: Test recovery helpers
+        run: |
+          python3 deploy/local/test_recovery.py
+          python3 deploy/local/test_prepare_legacy_backup.py
+
+      - name: Prepare local configuration
+        run: |
+          ./local init
+          ./local config
+
+      - name: Build the backend
+        run: docker compose --env-file .env.local -f compose.local.yml build backend
+
+      - name: Start the database and Redis
+        run: docker compose --env-file .env.local -f compose.local.yml up -d --wait db redis
+
+      - name: Check Django and migrations
+        run: |
+          docker compose --env-file .env.local -f compose.local.yml run --rm --no-deps -T backend python manage.py check
+          docker compose --env-file .env.local -f compose.local.yml run --rm --no-deps -T backend python manage.py makemigrations --check --dry-run
+
+      - name: Run all backend tests
+        run: docker compose --env-file .env.local -f compose.local.yml run --rm --no-deps -T backend python manage.py test cafepay --noinput --verbosity 1
+
+      - name: Remove test containers and volumes
+        if: always()
+        run: |
+          if [ -f .env.local ]; then
+            docker compose --env-file .env.local -f compose.local.yml down --volumes --remove-orphans
+          fi

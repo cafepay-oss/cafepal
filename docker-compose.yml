@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  nginx:
+    image: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    volumes:
+      - ./cafepay_core.conf:/etc/nginx/conf.d/cafepay_core.conf
+      - ./docker_data/static:/static
+      - ./docker_data/media:/media
+      - ./docker_data/certbot/conf:/etc/letsencrypt
+      - ./docker_data/certbot/www:/var/www/certbot
+    depends_on:
+      - core
+  redis:
+    image: redis
+  certbot:
+    image: certbot/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    volumes:
+      - ./docker_data/certbot/conf:/etc/letsencrypt
+      - ./docker_data/certbot/www:/var/www/certbot
+  db:
+    image: postgres
+    env_file:
+      - ./common.env
+    volumes:
+      - ./docker_data/database:/var/lib/postgresql
+  core:
+    build: .
+    command: "./start.sh"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./docker_data/static:/app/static
+      - ./docker_data/media:/app/media
+      - ./docker_data/private-media:/app/private-media

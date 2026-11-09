@@ -1,0 +1,115 @@
+name: cafepay-local
+
+x-backend-environment: &backend-environment
+  POSTGRES_DB: ${POSTGRES_DB:-cafepay}
+  POSTGRES_USER: ${POSTGRES_USER:-cafepay}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run ./local init first}
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Run ./local init first}
+  DJANGO_DEBUG: 'false'
+  CAFEPAY_LOCAL_RECOVERY: 'true'
+  CAFEPAY_MOCK_PAYMENTS: 'true'
+  CAFEPAY_FRONTEND_URL: http://localhost:3000
+
+services:
+  db:
+    image: postgres:${POSTGRES_TAG:-16-bookworm}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cafepay}
+      POSTGRES_USER: ${POSTGRES_USER:-cafepay}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run ./local init first}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [data]
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [data]
+
+  backend:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: deploy/local/Dockerfile.backend
+    environment: *backend-environment
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    volumes:
+      - static:/app/static
+      - ./local-data/media:/app/media
+      - ./local-data/private-media:/app/private-media
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/healthz/", timeout=5)']
+      interval: 5s
+      timeout: 6s
+      retries: 30
+      start_period: 30s
+    networks: [data]
+
+  api:
+    image: nginx:1.28-alpine
+    depends_on:
+      backend: {condition: service_healthy}
+    ports: ['127.0.0.1:8000:80']
+    volumes:
+      - ./deploy/local/nginx-api.conf:/etc/nginx/conf.d/default.conf:ro
+      - static:/static:ro
+      - ./local-data/media:/media:ro
+    networks: [data, browser]
+
+  webapp:
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: cafepal/deploy/local/Dockerfile.frontend
+      args:
+        SOURCE_DIR: cafepay-webapp
+        BUILD_SCRIPT: generate
+    ports: ['127.0.0.1:3000:80']
+    depends_on:
+      api: {condition: service_started}
+    networks: [browser]
+
+  admin:
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: cafepal/deploy/local/Dockerfile.frontend
+      args:
+        SOURCE_DIR: cafepay-admin
+    ports: ['127.0.0.1:3001:80']
+    depends_on:
+      api: {condition: service_started}
+    networks: [browser]
+
+  waiter:
+    profiles: [waiter]
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: cafepal/deploy/local/Dockerfile.frontend
+      args:
+        SOURCE_DIR: cafepay_waiter
+    ports: ['127.0.0.1:3002:80']
+    depends_on:
+      api: {condition: service_started}
+    networks: [browser]
+
+volumes:
+  database:
+  static:
+
+networks:
+  data:
+    internal: true
+  browser:

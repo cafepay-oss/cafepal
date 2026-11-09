@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>کافه‌پی · پرداخت آزمایشی</title>
+  <style>
+    body { margin: 0; padding: 24px; background: #f1f5f2; color: #18382c;
+           font: 17px/1.6 system-ui, sans-serif; }
+    main { max-width: 480px; margin: 8vh auto; background: white; padding: 32px;
+           border-radius: 20px; box-shadow: 0 12px 40px #18382c12; }
+    h1 { line-height: 1.2; } .label { font-weight: 700; color: #4b705e; }
+    .amount { font-size: 32px; font-weight: 700; }
+    code { overflow-wrap: anywhere; font-size: 13px; }
+    button { width: 100%; padding: 14px; margin-top: 12px; border-radius: 10px;
+             font: inherit; cursor: pointer; border: 1px solid #bbcfc2; }
+    button[value="approve"] { background: #146c43; color: white; border: 0; }
+    button[value="decline"] { background: white; color: #863b33; }
+  </style>
+</head>
+<body><main>
+  <div class="label">کافه‌پی · حالت آزمایشی محلی</div>
+  <h1>پرداخت آزمایشی</h1>
+  <p>اتصال بانکی برقرار نمی‌شود. پول واقعی جابه‌جا نمی‌شود و اطلاعات کارت لازم نیست.</p>
+  <div class="amount">{{ total }} تومان</div>
+  <p>شناسه صورتحساب<br><code dir="ltr">{{ invoice.uuid }}</code></p>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="token" value="{{ invoice.token }}">
+    <button name="decision" value="approve" type="submit">تأیید پرداخت آزمایشی</button>
+    <button name="decision" value="decline" type="submit">رد پرداخت آزمایشی</button>
+  </form>
+</main></body>
+</html>

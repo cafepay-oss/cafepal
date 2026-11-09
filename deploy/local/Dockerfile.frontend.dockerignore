@@ -1,0 +1,17 @@
+**
+!cafepay-webapp/
+!cafepay-webapp/**
+!cafepay-admin/
+!cafepay-admin/**
+!cafepay_waiter/
+!cafepay_waiter/**
+!cafepal/
+!cafepal/deploy/
+!cafepal/deploy/local/
+!cafepal/deploy/local/nginx-spa.conf
+**/.git
+**/node_modules
+**/dist
+**/.nuxt
+**/.env*
+**/*.log

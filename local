@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""Repeatable local Cafepay setup. Run ./local --help for commands."""
+import argparse
+import gzip
+import os
+from pathlib import Path, PurePosixPath
+import secrets
+import shutil
+import stat
+import subprocess
+import sys
+import tarfile
+import tempfile
+import zipfile
+
+ROOT = Path(__file__).resolve().parent
+DATA = ROOT / 'local-data'
+ENV = ROOT / '.env.local'
+
+
+def initialize():
+    DATA.mkdir(mode=0o700, exist_ok=True)
+    (DATA / 'media').mkdir(exist_ok=True)
+    (DATA / 'private-media').mkdir(mode=0o700, exist_ok=True)
+    if not ENV.exists():
+        fd = os.open(str(ENV), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            stream.write('POSTGRES_DB=cafepay\nPOSTGRES_USER=cafepay\n'
+                         'POSTGRES_TAG=16-bookworm\n'
+                         'POSTGRES_PASSWORD=' + secrets.token_hex(24) + '\n'
+                         'DJANGO_SECRET_KEY=' + secrets.token_hex(32) + '\n')
+    print('Local configuration ready. Existing configuration and data preserved.')
+
+
+def compose(*args, **kwargs):
+    if not ENV.is_file():
+        raise ValueError('Run ./local init first.')
+    return subprocess.run(['docker', 'compose', '--env-file', str(ENV),
+                           '-f', str(ROOT / 'compose.local.yml'), *args],
+                          cwd=ROOT, check=True, **kwargs)
+
+
+def restore_database(source):
+    source = source.resolve(strict=True)
+    if not source.is_file():
+        raise ValueError('Expected a PostgreSQL database dump file.')
+    with source.open('rb') as probe:
+        compressed = probe.read(2) == b'\x1f\x8b'
+    opener = gzip.open if compressed else open
+    with opener(source, 'rb') as stream:
+        prefix = stream.read(512)
+    archive = prefix.startswith(b'PGDMP') or prefix[257:262] == b'ustar'
+    if not archive and (b'PostgreSQL' not in prefix or b'\x00' in prefix):
+        raise ValueError('Unrecognized dump. Expected pg_dump SQL, custom, tar, or gzip output.')
+    compose('up', '-d', '--wait', 'db')
+    count = compose('exec', '-T', 'db', 'sh', '-c',
+                    'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1 -c '
+                    '"SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace '
+                    "WHERE n.nspname NOT IN ('pg_catalog','information_schema') "
+                    "AND n.nspname NOT LIKE 'pg_toast%' AND c.relkind IN ('r','p','S','v','m','f');\"",
+                    capture_output=True, text=True).stdout.strip()
+    if count != '0':
+        raise ValueError('Database already contains objects; restore refused. Existing data was not changed.')
+    command = ('pg_restore --single-transaction --exit-on-error --no-owner --no-privileges '
+               '-U "$POSTGRES_USER" -d "$POSTGRES_DB"' if archive else
+               'psql --single-transaction -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"')
+    # A normal file can stream directly; a gzip wrapper must be decompressed before
+    # passing it as a subprocess file descriptor.
+    with tempfile.TemporaryFile() as expanded:
+        with opener(source, 'rb') as stream:
+            shutil.copyfileobj(stream, expanded)
+        expanded.seek(0)
+        compose('exec', '-T', 'db', 'sh', '-c', command, stdin=expanded)
+    print('Database restore completed. Run ./local up to apply migrations and start the apps.')
+
+
+def safe_member(name):
+    path = PurePosixPath(name)
+    if path.is_absolute() or '..' in path.parts or '\\' in name:
+        raise ValueError('Unsafe archive path: ' + name)
+    return path
+
+
+def import_media(source):
+    source = source.resolve(strict=True)
+    target = DATA / 'media'
+    if target.exists() and any(target.iterdir()):
+        raise ValueError('Media destination is not empty; import refused without changing it.')
+    DATA.mkdir(mode=0o700, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='media-import-', dir=DATA) as scratch:
+        staging = Path(scratch) / 'content'
+        staging.mkdir()
+        if source.is_dir():
+            if source == target or target in source.parents or source in target.parents:
+                raise ValueError('Select an independent backup directory, outside local-data.')
+            for entry in source.rglob('*'):
+                if entry.is_symlink():
+                    raise ValueError('Symlinks are not supported in media backups.')
+            shutil.copytree(source, staging, dirs_exist_ok=True)
+        elif zipfile.is_zipfile(source):
+            with zipfile.ZipFile(source) as archive:
+                for item in archive.infolist():
+                    safe_member(item.filename)
+                    if stat.S_ISLNK(item.external_attr >> 16):
+                        raise ValueError('Symlinks are not supported in media backups.')
+                archive.extractall(staging)
+        elif tarfile.is_tarfile(source):
+            with tarfile.open(source) as archive:
+                items = archive.getmembers()
+                for item in items:
+                    safe_member(item.name)
+                    if not (item.isfile() or item.isdir()):
+                        raise ValueError('Media archives may only contain regular files and directories.')
+                # Extract validated regular files explicitly, without restoring owners
+                # or permissions and without following links.
+                for item in items:
+                    destination = staging / item.name
+                    if item.isdir():
+                        destination.mkdir(parents=True, exist_ok=True)
+                    else:
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        with archive.extractfile(item) as inp, destination.open('wb') as out:
+                            shutil.copyfileobj(inp, out)
+        else:
+            raise ValueError('Expected a media directory, ZIP, or tar archive.')
+        contents = list(staging.iterdir())
+        if len(contents) == 1 and contents[0].is_dir() and contents[0].name == 'media':
+            staging = contents[0]
+        count = sum(1 for item in staging.rglob('*') if item.is_file())
+        if count == 0:
+            raise ValueError('The selected backup contains no media files.')
+        # Ensure nginx can read imported files even when a backup used restrictive modes.
+        for item in staging.rglob('*'):
+            item.chmod(0o755 if item.is_dir() else 0o644)
+        staging.chmod(0o755)
+        if target.exists():
+            target.rmdir()
+        staging.rename(target)
+    print('Imported %d media files; original backup preserved.' % count)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    subs = parser.add_subparsers(dest='command', required=True)
+    for name in ['init', 'up', 'down', 'status', 'logs', 'check', 'config', 'test', 'admin', 'demo']:
+        subs.add_parser(name)
+    subs.add_parser('restore-db').add_argument('file', type=Path)
+    subs.add_parser('import-media').add_argument('source', type=Path)
+    subs.add_parser('manage').add_argument('args', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    if args.command == 'init':
+        initialize()
+    elif args.command == 'restore-db':
+        restore_database(args.file)
+    elif args.command == 'import-media':
+        import_media(args.source)
+    elif args.command == 'up':
+        compose('up', '-d', '--build', '--wait')
+        print('Customer: http://localhost:3000  Admin: http://localhost:3001  API: http://localhost:8000')
+    elif args.command == 'down':
+        compose('down')  # Deliberately retain database and static volumes.
+    elif args.command == 'status':
+        compose('ps')
+    elif args.command == 'logs':
+        compose('logs', '--tail', '100')
+    elif args.command == 'config':
+        compose('config', '--quiet')  # Do not print generated credentials.
+    elif args.command == 'manage':
+        compose('exec', 'backend', 'python', 'manage.py', *args.args)
+    elif args.command == 'admin':
+        compose('exec', '-T', 'backend', 'python', 'manage.py', 'bootstrap_local_admin')
+    elif args.command == 'demo':
+        compose('exec', '-T', 'backend', 'python', 'manage.py', 'seed_local_demo')
+    elif args.command == 'check':
+        compose('exec', '-T', 'backend', 'python', 'manage.py', 'check')
+        # Django 2.2 does not support migrate --check.
+        compose('exec', '-T', 'backend', 'python', 'manage.py', 'shell', '-c',
+                'import sys; from django.db import connection; '
+                'from django.db.migrations.executor import MigrationExecutor; '
+                'executor = MigrationExecutor(connection); '
+                'plan = executor.migration_plan(executor.loader.graph.leaf_nodes()); '
+                'print("Pending migrations:", len(plan)); sys.exit(bool(plan))')
+        subprocess.run([sys.executable, str(ROOT / 'deploy/local/check_stack.py')], check=True)
+    elif args.command == 'test':
+        # Start only dependencies. Django creates and destroys a separate test
+        # database; do not run start.sh or migrate/modify a restored database.
+        compose('build', 'backend')
+        compose('up', '-d', '--wait', 'db', 'redis')
+        compose('run', '--rm', '--no-deps', '-T', 'backend',
+                'python', 'manage.py', 'test', 'cafepay.test_mock_payments',
+                'cafepay.test_local_accounts', 'cafepay.test_card_transfers',
+                'cafepay.test_card_transfer_integrity',
+                'cafepay.test_public_menu_entry',
+                '--noinput', '--verbosity', '2')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        sys.exit(str(error))

@@ -1,0 +1,118 @@
+
+body {
+  display: flex;
+  background: #F5F5F5;
+  height: 97vh;
+}
+
+.card-body {
+    padding: 10px;
+}
+
+.card {
+  background: white;
+  margin: auto;
+  flex-basis: 600px;
+  transition: box-shadow .25s;
+  box-shadow: 0 10px 17px -1px rgba(0, 0, 0, .1),
+    0 4px 8px 3px rgba(0, 0, 0, .05) !important;
+    border-radius: 5px !important;
+}
+
+
+
+.ssh {
+  box-shadow: 0 1px 2.5px 0 rgba(0, 0, 0, 0.16) !important;
+}
+
+
+th, td{
+      padding: .75rem;
+      vertical-align: top;
+      border-top: 1px solid #dee2e6;
+      text-align: right;
+}
+
+th {
+  color: #8d8d8d;
+  font-weight: 500;
+}
+
+table {
+  padding: 25px;
+  width: 100%;
+  border-spacing: 0;
+}
+
+.card-header {
+  padding: 15px 25px;
+  color: white;
+  border-radius: 5px 5px 0 0;
+  font-size: 18px;
+}
+
+.green {
+  background: #3eb844;
+}
+
+.red {
+  background: #f00;
+
+}
+
+.gray {
+    background: #a9a9a9;
+}
+
+.btn-container {
+  width: 100;
+  text-align: center;
+}
+.button {
+  background-color: #3eb844 !important;
+  -webkit-transition: 0.3s;
+    color: white;
+  transition: 0.3s;
+  border-radius: 25px !important;
+  border: none;
+  margin-bottom: 25px;
+  padding: 10px 25px;
+  font-size: 16px;
+}
+.button:hover {
+  cursor: pointer;
+}
+* {
+  font-family: Vazirmatn, sans-serif;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: Vazirmatn;
+  font-style: normal;
+  font-weight: 500;
+  src: url('./font/Vazirmatn-FD-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: Vazirmatn;
+  font-style: normal;
+  font-weight: normal;
+  src: url('./font/Vazirmatn-FD-Regular.woff2') format('woff2');
+}
+
+@media (max-width: 630px){
+  body {
+  }
+  .card {
+    flex-basis: 95%;
+    margin: auto;
+
+  }
+  th {
+    width: 35%;
+  }
+  th, td {
+    word-break: break-word;
+  }
+}

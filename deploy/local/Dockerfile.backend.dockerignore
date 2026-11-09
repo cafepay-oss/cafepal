@@ -1,0 +1,16 @@
+**
+!cafepal/
+!cafepal/**
+!cafepay/
+!cafepay/**
+!sms/
+!sms/**
+!local_static/
+!local_static/**
+!manage.py
+!deploy/
+!deploy/local/
+!deploy/local/**
+**/__pycache__
+**/secret*.py
+**/*.pem

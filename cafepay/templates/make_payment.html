@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>پرداخت | کافه پی</title>
+</head>
+<body>
+<h1>پرداخت | کافه پی</h1>
+
+<table>
+    <tr>
+        <th>مبلغ</th>
+        <td>{{ invoice.amount }}</td>
+    </tr>
+</table>
+<form action="" method="GET">
+    <select name="gate">
+        {% for display, gate in pg_gates_array %}
+        <option value={{gate}}>{{ display }}
+        </option>
+        {% endfor %}
+    </select>
+    <input type="submit" value="payment_set">
+</form>
+
+</body>
+</html>
