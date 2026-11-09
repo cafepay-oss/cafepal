@@ -115,24 +115,31 @@ cd ../cafepay-admin
 node --test tests/*.cjs
 ```
 
-On 2026-11-09, the local backend passed 47 tests.
-This included all 23 card-transfer tests.
+On 2026-11-09, the local backend passed 52 tests.
+This included 23 card-transfer tests and five public menu entry tests.
 The recovery helpers passed another 14 tests.
 These results do not confirm the complete process in the browser.
 
 ## Browser check
 
-Open this local demonstration link in a private browser window:
-[CafePay Local Demo](http://localhost:3000/user/home/?token=938770631022).
+Create a sample product named `E2E Espresso` at 25000 toman in your demo cafe.
+Open that cafe from the customer app and copy its menu link.
+Open the link in a private browser window.
+The address has this form: `http://localhost:3000/user/home/?token=<menu-token>`.
+Use the menu token from your installation.
 The link must include `token`; `/user/home` alone opens the table scanner.
 The menu appears without login.
 Add one `E2E Espresso`, then select **رفتن به مرحله‌ی بعد**.
 Use a new local test phone, such as `09000000910`, and enter a test name.
 Local test mode fills the verification code and sends no SMS.
-After login, the basket contains the same product at 25000 toman.
+After login, check that the basket contains the same product at 25000 toman.
 Choose **ادامه و پرداخت**, **کارت‌به‌کارت**, then **نمایش کارت و ارسال رسید**.
-Use a synthetic receipt and send no real money.
+Use a sample receipt and send no real money.
 `localhost` links work on this computer; public sharing requires deployment.
+
+Saved browser screenshots show the menu before login and a customer basket totaling 25000 toman.
+They do not show every login step or the final card-transfer instructions.
+Follow these steps to check the complete process:
 
 1. Configure a test destination card in a local cafe.
 2. Create a product and order it as a customer.

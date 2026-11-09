@@ -254,3 +254,12 @@ These checks do not send money or verify the complete browser flow.
 
 The public receipt stylesheet now uses Vazirmatn under the SIL Open Font License.
 The repository includes the font's license and source information.
+
+## Latest backend check on 2026-11-09
+
+The public code at `2c9e4be` passed all 115 backend tests.
+This run includes five public menu entry tests added after the earlier 110-test run.
+The local test command's subset passed 52 tests, including 23 card-transfer tests.
+The container's 363 source files matched the public code before and after the tests.
+The tests used a separate PostgreSQL database.
+The GitHub Actions backend checks also passed for `2c9e4be`.
